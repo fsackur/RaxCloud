@@ -128,7 +128,7 @@ $ProvisioningJson =
 }
 "@
 
-$NewServer = (
+$NewServerInit = (
     Invoke-RestMethod "$Url/servers" -Method Post -Headers @{
         'X-Auth-Token' = $Token.access.token.id;
         'Content-type' = 'application/json';
@@ -137,20 +137,17 @@ $NewServer = (
 ).server
 
 
-$NewServerUrl = ($NewServer.links | where {$_.rel -eq "bookmark"}).href
-
-(
-    Invoke-RestMethod $NewServerUrl -Method Post -Headers @{
+$NewServer = (
+    Invoke-RestMethod "$Url/servers/detail" -Method Get -Headers @{
         'X-Auth-Token' = $Token.access.token.id;
         'Content-type' = 'application/json';
         'Accept' = 'application/json';
-    } -Body $ProvisioningJson
-)
+    }
+).servers | where {$_.id -eq $NewServerInit.id}
 
 
 
-
-Add-PoshSecret -Name $ServerName -Username 'Administrator' -Password $NewServer.adminPass
+Add-PoshSecret -Name $ServerName -Username 'Administrator' -Password $NewServerInit.adminPass -Property @{IP=$NewServer.accessIPv4}
 
 
 <#
@@ -160,3 +157,4 @@ $OverwriteLength = (Get-Item $openstackAccounts).Length
 ([string][char][byte]0x00 * $OverwriteLength) > $openstackAccounts
 Remove-Item $openstackAccounts
 #>
+
