@@ -12,10 +12,6 @@ $ApiSecret = Get-PoshSecret | where Name -eq Rackspace | Get-PoshSecret -AsPlain
 
 #Get auth token using API key
 $Body = '{"auth":{"RAX-KSKEY:apiKeyCredentials":{"username":"' + $ApiSecret.Username + '","apiKey":"' + $ApiSecret.Password + '"}}}'
-#$Token = (
-#    #Use IWR instead of IRM in order to get JSON back
-#    Invoke-WebRequest https://identity.api.rackspacecloud.com/v2.0/tokens -Method Post -Headers @{'Content-type' = 'application/json'} -Body $Body
-#).Content
 $Token = Invoke-RestMethod https://identity.api.rackspacecloud.com/v2.0/tokens -Method Post -Headers @{'Content-type' = 'application/json'} -Body $Body
 
 
@@ -62,7 +58,8 @@ $Flavors = (
     }
 ).flavors
 
-$FlavorGen12 = $Flavors[13]
+$FlavorGen12 = $Flavors | where {$_.name -eq '2 GB General Purpose v1'}
+
 
 
 $Images = (
@@ -73,9 +70,87 @@ $Images = (
     }
 ).images
 
+
 $BaseImages = $Images | where {$_.metadata.image_type -eq 'base'}
 $WindowsBaseImages = $BaseImages | where {$_.metadata.'org.openstack__1__os_distro' -eq 'com.microsoft.server'}
 $Image2012R2 = $WindowsBaseImages | where {$_.metadata.'org.openstack__1__os_version' -eq '2012.2' -and $_.name -notmatch 'OnMetal'}
+
+
+
+$JenkinsServerName = 'FSJ1'
+$Servers = (
+    Invoke-RestMethod "$Url/servers/detail" -Method Get -Headers @{
+        'X-Auth-Token' = $Token.access.token.id;
+        'Content-type' = 'application/json';
+        'Accept' = 'application/json';
+    }
+).servers
+
+$JenkinsServer = $Servers | where {$_.name -eq $JenkinsServerName}
+
+
+
+$Networks = (
+    Invoke-RestMethod "$Url/os-networksv2" -Method Get -Headers @{
+        'X-Auth-Token' = $Token.access.token.id;
+        'Content-type' = 'application/json';
+        'Accept' = 'application/json';
+    }
+).networks
+
+$PublicNetworkId = '00000000-0000-0000-0000-000000000000'
+$PrivateNetworkId = '11111111-1111-1111-1111-111111111111'
+
+
+#$S = New-OpenStackComputeServer -ImageId $Image2012R2.id -FlavorId $FlavorGen12.id -ServerName 'FS-DC'
+$ServerName = 'FS-DC'
+
+
+$ProvisioningJson = 
+@"
+{
+    "server": {
+        "name": "$ServerName",
+        "imageRef": "$($Image2012R2.id)",
+        "flavorRef": "$($FlavorGen12.id)",
+        "metadata": {
+            "Owner": "$env:USERNAME"
+        },
+        "networks": [
+            {
+                "uuid": "00000000-0000-0000-0000-000000000000"
+            },
+            {
+                "uuid": "11111111-1111-1111-1111-111111111111"
+            }
+        ]
+    }
+}
+"@
+
+$NewServer = (
+    Invoke-RestMethod "$Url/servers" -Method Post -Headers @{
+        'X-Auth-Token' = $Token.access.token.id;
+        'Content-type' = 'application/json';
+        'Accept' = 'application/json';
+    } -Body $ProvisioningJson
+).server
+
+
+$NewServerUrl = ($NewServer.links | where {$_.rel -eq "bookmark"}).href
+
+(
+    Invoke-RestMethod $NewServerUrl -Method Post -Headers @{
+        'X-Auth-Token' = $Token.access.token.id;
+        'Content-type' = 'application/json';
+        'Accept' = 'application/json';
+    } -Body $ProvisioningJson
+)
+
+
+
+
+Add-PoshSecret -Name $ServerName -Username 'Administrator' -Password $NewServer.adminPass
 
 
 <#
