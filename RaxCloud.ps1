@@ -12,11 +12,11 @@ $ApiSecret = Get-PoshSecret | where Name -eq Rackspace | Get-PoshSecret -AsPlain
 
 #Get auth token using API key
 $Body = '{"auth":{"RAX-KSKEY:apiKeyCredentials":{"username":"' + $ApiSecret.Username + '","apiKey":"' + $ApiSecret.Password + '"}}}'
-$Token = (
-    #Use IWR instead of IRM in order to get JSON back
-    Invoke-WebRequest https://identity.api.rackspacecloud.com/v2.0/tokens -Method Post -Headers @{'Content-type' = 'application/json'} -Body $Body
-).Content
-
+#$Token = (
+#    #Use IWR instead of IRM in order to get JSON back
+#    Invoke-WebRequest https://identity.api.rackspacecloud.com/v2.0/tokens -Method Post -Headers @{'Content-type' = 'application/json'} -Body $Body
+#).Content
+$Token = Invoke-RestMethod https://identity.api.rackspacecloud.com/v2.0/tokens -Method Post -Headers @{'Content-type' = 'application/json'} -Body $Body
 
 
 #Use the API key as required by PoshStack
@@ -46,6 +46,36 @@ try {
 
 $PSDefaultParameterValues += @{'New-OpenStackComputeServer:Account' = $ApiSecret.Account}
 Show-Command New-OpenStackComputeServer
+
+
+
+$TokenObj = $Token | ConvertFrom-Json
+$Url = $Token.access.serviceCatalog.endpoints | where {$_.publicUrl -match 'servers'} | select -ExpandProperty publicUrl
+
+
+
+$Flavors = (
+    Invoke-RestMethod "$Url/flavors/detail" -Method Get -Headers @{
+        'X-Auth-Token' = $Token.access.token.id;
+        'Content-type' = 'application/json';
+        'Accept' = 'application/json';
+    }
+).flavors
+
+$FlavorGen12 = $Flavors[13]
+
+
+$Images = (
+    Invoke-RestMethod "$Url/images/detail" -Method Get -Headers @{
+        'X-Auth-Token' = $Token.access.token.id;
+        'Content-type' = 'application/json';
+        'Accept' = 'application/json';
+    }
+).images
+
+$BaseImages = $Images | where {$_.metadata.image_type -eq 'base'}
+$WindowsBaseImages = $BaseImages | where {$_.metadata.'org.openstack__1__os_distro' -eq 'com.microsoft.server'}
+$Image2012R2 = $WindowsBaseImages | where {$_.metadata.'org.openstack__1__os_version' -eq '2012.2' -and $_.name -notmatch 'OnMetal'}
 
 
 <#
