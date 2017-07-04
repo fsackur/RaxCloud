@@ -1,0 +1,84 @@
+description: 'HEAT template for configuring Pull Server'
+heat_template_version: '2014-10-16'
+outputs:
+   public_ip:
+       description: public IP of the windows server
+       value:
+           get_attr: [rs_pull_server, accessIPv4]
+   admin_password:
+       value: { get_attr: [ rs_pull_server, admin_pass] }
+       description: Administrator Password
+parameters:
+   flavor:
+       constraints:
+       -   allowed_values: [1 GB Performance, 2 GB Performance, 4 GB Performance,
+               8 GB Performance, 15 GB Performance]
+           description: must be a valid Rackspace Cloud Server flavor.
+       default: 2 GB Performance
+       description: Rackspace Cloud Server flavor
+       type: string
+   image: 
+       constraints:
+       -   allowed_values: [Windows Server 2012, Windows Server 2012 R2]
+       default: Windows Server 2012 R2
+       description: Rackspace Cloud Server image name
+       type: string
+   pullserver_hostname:
+       constraints:
+       -   length: {max: 15, min: 1}
+       - {allowed_pattern: '[a-zA-Z][a-zA-Z0-9]*', description: must begin with a
+               letter and contain only alphanumeric characters.}
+       default: PULLServer
+       description: Windows Server Name
+       type: string
+   rsConfigs: {default: DDI_rsConfigs, type: string, description: DDI_rsConfigs}
+   branch_rsConfigs: {default: master, type: string, description: Branch to be used for DDI_rsConfigs}
+   rs_username: {type: string, description: Rackspace Cloud Username}
+   rs_apikey: {type: string, description: Rackspace Cloud APIKey}
+   git_username: {default: AutomationSupport,type: string, description: Repo DDI_rsConfigs lives in i.e. UserFork or AutomationSupport}
+   git_Oauthtoken: {type: string, description: Git OAuth Token for the customer or fork account}
+   gitBr: {default: v2.0.0,type: string, description: rsGit Module Tag}
+   provBr: {default: v2.1.0,type: string, description: rsbootstrap Module Tag}
+   commonBr: {default: v2.0.0,type: string, description: rscommon Module Tag}
+resources:
+ rs_pull_server:
+   type: Rackspace::Cloud::WinServer
+   properties:
+     flavor: {get_param: flavor}
+     image: {get_param: image}
+     name: {get_param: pullserver_hostname}
+     metadata: 
+       rax_dsc_config: rsPullServer.ps1
+       build_config: core
+     save_admin_pass: true
+     user_data:
+       str_replace: 
+         template: |
+               if((Test-Path -Path 'C:\DevOps') -eq $false) {New-Item -Path 'C:\DevOps' -ItemType Directory -Force}
+               $path = 'C:\DevOps\secrets.ps1'
+               Set-Content -Path $path -Value "`$d = @{"
+               Add-Content -Path $path -Value @"
+               "branch_rsConfigs" = "%%branch_rsConfigs"
+               "rs_username" = "%%rs_username"
+               "rs_apikey" = "%%rs_apikey"
+               "mR" = "%%rsConfigs"
+               "git_username" = "%%git_username"
+               "provBr" = "%%provBr"
+               "gitBr" = "%%gitBr"
+               "commonBr" = "%%commonBr"
+               "git_Oauthtoken" = "%%git_Oauthtoken"
+               }
+               "@
+               (New-Object System.Net.webclient).DownloadFile('http://rsWinAutomationSupport.github.io/rsbootstrap/bootstrap.ps1','C:\DevOps\bootstrap.ps1')
+               Set-Content -Path "C:\DevOps\DevOpsBoot.cmd" -Value "Powershell.exe Set-ExecutionPolicy Bypass -Force; Powershell.exe ""C:\DevOps\bootstrap.ps1"""
+               Start-Process "C:\DevOps\DevOpsBoot.cmd"
+         params:
+           "%%rsConfigs" : { get_param: rsConfigs }
+           "%%branch_rsConfigs" : { get_param: branch_rsConfigs }
+           "%%rs_username" : { get_param: rs_username }
+           "%%rs_apikey" : { get_param: rs_apikey }
+           "%%git_username" : { get_param: git_username }
+           "%%git_Oauthtoken" : { get_param: git_Oauthtoken }
+           "%%gitBr" : { get_param: gitBr }
+           "%%provBr" : { get_param: provBr }
+           "%%commonBr" : { get_param: commonBr }
