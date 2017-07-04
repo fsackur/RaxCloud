@@ -38,14 +38,25 @@ try {
 }
 
 
-
+<#
+#Scrub credential info
+$OverwriteLength = (Get-Item $openstackAccounts).Length
+([string][char][byte]0xFF * $OverwriteLength) > $openstackAccounts
+([string][char][byte]0x00 * $OverwriteLength) > $openstackAccounts
+Remove-Item $openstackAccounts
+#>
 
 $PSDefaultParameterValues += @{'New-OpenStackComputeServer:Account' = $ApiSecret.Account}
-Show-Command New-OpenStackComputeServer
 
 
 
-$TokenObj = $Token | ConvertFrom-Json
+
+
+
+
+
+
+
 $Url = $Token.access.serviceCatalog.endpoints | where {$_.publicUrl -match 'servers'} | select -ExpandProperty publicUrl
 
 
@@ -147,14 +158,23 @@ $NewServer = (
 
 
 
-Add-PoshSecret -Name $ServerName -Username 'Administrator' -Password $NewServerInit.adminPass -Property @{IP=$NewServer.accessIPv4}
+Add-PoshSecret -Name $ServerName -Username 'Administrator' -Password $NewServerInit.adminPass -Property @{
+    PublicIP=($NewServer.addresses.public | where {$_.version -eq 4} | select -ExpandProperty addr);
+    PrivateIP=($NewServer.addresses.private | where {$_.version -eq 4} | select -ExpandProperty addr);
+}
+
+$NewServerSecret = Get-PoshSecret -Name 'fs-dc' -Username 'Administrator' -AsPlaintext
 
 
-<#
-#Scrub credential info
-$OverwriteLength = (Get-Item $openstackAccounts).Length
-([string][char][byte]0xFF * $OverwriteLength) > $openstackAccounts
-([string][char][byte]0x00 * $OverwriteLength) > $openstackAccounts
-Remove-Item $openstackAccounts
-#>
+
+
+
+#Connect
+
+$Cred = Get-PoshSecret -Name 'fs-dc' -Username 'Administrator' -AsPSCredential
+
+New-PSSession -ComputerName $NewServerSecret.PrivateIP -Credential $Cred -UseSSL -SessionOption (
+    New-PSSessionOption -SkipCACheck -SkipCNCheck -SkipRevocationCheck
+)
+
 
